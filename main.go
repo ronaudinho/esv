@@ -1,21 +1,18 @@
 package main
 
 import (
-	"log"
 	"math/rand"
-	"runtime"
+	"net/http"
 	"strconv"
 	"time"
 
 	"github.com/arl/statsviz"
-	"github.com/arl/statsviz/websocket"
 	"github.com/labstack/echo/v4"
 )
 
 // statsviz routes
 const (
-	statsvizRoot = "/admin/debug/stats/"
-	statsvizWs   = "/admin/debug/stats/ws"
+	statsvizRoot = "/debug/statsviz/"
 )
 
 func main() {
@@ -25,48 +22,13 @@ func main() {
 
 	e := echo.New()
 
+	mux := http.NewServeMux()
+	statsviz.Register(mux)
+
 	// "*" to allow getting files necessary for UI stylings
-	e.GET(statsvizRoot+"*", echo.WrapHandler(statsviz.IndexAtRoot(statsvizRoot)))
-	e.GET(statsvizWs, ws)
+	e.GET(statsvizRoot+"*", echo.WrapHandler(mux))
 
 	e.Logger.Fatal(e.Start(":1323"))
-}
-
-// echo requires explicitly upgrading to websocket,
-// hence copying statsviz.Ws to make it work here.
-// reference: https://echo.labstack.com/cookbook/websocket
-func ws(c echo.Context) error {
-	var upgrader = websocket.Upgrader{
-		ReadBufferSize:  1024,
-		WriteBufferSize: 1024,
-	}
-
-	ws, err := upgrader.Upgrade(c.Response(), c.Request(), nil)
-	if err != nil {
-		log.Println("ws: upgrade error:", err)
-		return err
-	}
-	defer ws.Close()
-
-	tick := time.NewTicker(time.Second)
-	defer tick.Stop()
-
-	// unexported struct in statsviz
-	// reference: https://github.com/arl/statsviz/blob/master/statsviz.go
-	var stats struct {
-		Mem          runtime.MemStats
-		NumGoroutine int
-	}
-	for {
-		select {
-		case <-tick.C:
-			runtime.ReadMemStats(&stats.Mem)
-			stats.NumGoroutine = runtime.NumGoroutine()
-			if err := ws.WriteJSON(stats); err != nil {
-				return err
-			}
-		}
-	}
 }
 
 // reference: https://github.com/arl/statsviz/blob/master/_example/work.go
